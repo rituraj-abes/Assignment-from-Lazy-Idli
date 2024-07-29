@@ -2,16 +2,18 @@
 volatile int g_ReadDIpinSts;  // Represents real-time status of digital input pins
 volatile int g_AppDIpinSts;   // Represents the application status of digital input pins
 
+#define num_size 32
 // Array to track the consistent count of each digital input pin
-static int pin_consistent_count[8] = {0};
+static int pin_consistent_count[num_size] = {0};
 
 // Function prototype
 int ISR_DIsampling(void) {
     // Loop through each bit in the global read status variable
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < num_size; i++) {
         // Extract the current status of the i-th pin
         int current_pin_status = (g_ReadDIpinSts >> i) & 1;
-        
+        Serial.print(current_pin_status);
+        Serial.print(" ");
         // Extract the last known status of the i-th pin from the application status variable
         int last_known_status = (g_AppDIpinSts >> i) & 1;
         
