@@ -1,7 +1,11 @@
-#include <stdio.h>
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
+#include <Arduino.h>
+#include <FreeRTOS.h>
+#include <task.h>
+#include <queue.h>
+
+// Global variables
+int G_DataID = 0;
+int G_DataValue = 0;
 
 // Definition of Data_t
 typedef struct {
@@ -9,93 +13,74 @@ typedef struct {
     int32_t DataValue;
 } Data_t;
 
-// Global Variables
-extern uint8_t G_DataID;
-extern int32_t G_DataValue;
-
-// Queue Handle
+// Queue handle
 QueueHandle_t Queue1;
 
-// Task Handles
-TaskHandle_t TaskHandle_1;
-TaskHandle_t TaskHandle_2;
+// Task handles
+TaskHandle_t TaskHandle_1 ;
+TaskHandle_t TaskHandle_2 ;
 
-// Task Prototypes
+int originalPriority = 1;
+
+// Function prototypes
 void ExampleTask1(void *pV);
 void ExampleTask2(void *pV);
 
-int main(void) {
+void setup() {
+    Serial.begin(9600);
+
     // Create the queue
     Queue1 = xQueueCreate(5, sizeof(Data_t));
-    
-    if (Queue1 != NULL) {
-        // Create tasks
-        xTaskCreate(ExampleTask1, "Task1", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, &TaskHandle_1);
-        xTaskCreate(ExampleTask2, "Task2", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, &TaskHandle_2);
-        
-        // Start the scheduler
-        vTaskStartScheduler();
-    } else {
-        // Queue was not created and must not be used.
-        printf("Failed to create the queue.\n");
+    if (Queue1 == NULL) {
+        Serial.println("Queue creation failed");
+        while (1); // Halt if queue creation fails
     }
-    
-    // Main should never reach here as the scheduler is running
-    for (;;) {}
-    return 0;
+
+    // Create tasks
+    xTaskCreate(ExampleTask1, "Task1", 128, NULL, originalPriority, &TaskHandle_1);
+    xTaskCreate(ExampleTask2, "Task2", 128, NULL, originalPriority, &TaskHandle_2);
 }
 
+void loop() {
+    // The loop is empty because FreeRTOS handles tasks
+}
+
+// Task to send data to the queue
 void ExampleTask1(void *pV) {
     Data_t data;
     
-    for (;;) {
-        // Populate data from global variables
+    while (1) {
         data.dataID = G_DataID;
         data.DataValue = G_DataValue;
+        // if (xQueueSend(Queue1, &data, portMAX_DELAY) != pdPASS) {
+            // Serial.println("Failed to send data to the queue");
+        // }
         
-        // Send data to the queue
-        xQueueSend(Queue1, &data, portMAX_DELAY);
-        
-        // Print statement
-        printf("Task1 sent data: dataID = %d, DataValue = %d\n", data.dataID, data.DataValue);
-        
-        // Delay for 500ms
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(500)); // Delay of 500ms
     }
 }
 
+// Task to process data from the queue
 void ExampleTask2(void *pV) {
-    Data_t data;
-    UBaseType_t initialPriority = uxTaskPriorityGet(NULL);
-    UBaseType_t currentPriority = initialPriority;
-    
-    for (;;) {
-        // Wait for data to be available in the queue
-        if (xQueueReceive(Queue1, &data, portMAX_DELAY) == pdPASS) {
-            // Print statement
-            printf("Task2 received data: dataID = %d, DataValue = %d\n", data.dataID, data.DataValue);
-            
-            // Process data according to the specified logic
-            if (data.dataID == 0) {
-                // Delete ExampleTask2
-                vTaskDelete(NULL);
-            } else if (data.dataID == 1) {
-                // Allow processing of DataValue member
-                if (data.DataValue == 0) {
-                    // Increase the priority of ExampleTask2 by 2
-                    vTaskPrioritySet(NULL, initialPriority + 2);
-                    currentPriority = initialPriority + 2;
-                } else if (data.DataValue == 1) {
-                    // Decrease the priority of ExampleTask2 if previously increased
-                    if (currentPriority > initialPriority) {
-                        vTaskPrioritySet(NULL, initialPriority);
-                        currentPriority = initialPriority;
-                    }
-                } else if (data.DataValue == 2) {
-                    // Delete ExampleTask2
-                    vTaskDelete(NULL);
-                }
+    Data_t receivedData;
+    while (1) {
+        if (xQueueReceive(Queue1, &receivedData, portMAX_DELAY) == pdPASS) {
+            Serial.print("Received dataID: ");
+            Serial.print(receivedData.dataID);
+            Serial.print(", DataValue: ");
+            Serial.println(receivedData.DataValue);
+
+            if(receivedData.dataID == 0)
+                vTaskDelete(TaskHandle_2);
+            else if(receivedData.dataID == 1){
+                if (receivedData.DataValue == 0)
+                    vTaskPrioritySet(NULL, originalPriority + 2); // Increase priority
+                else if (receivedData.DataValue == 1)
+                    vTaskPrioritySet(NULL, originalPriority); // Restore original priority
+                else if (receivedData.DataValue == 2)
+                    vTaskDelete(TaskHandle_2); // Delete this task
             }
+           
         }
     }
 }
